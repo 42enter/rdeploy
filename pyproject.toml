@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "rdeploy"
 dynamic = ["version"]
 description = "CLI that makes it easy to build and deploy an application to k8s."
-readme = "README.rst"
+readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [
