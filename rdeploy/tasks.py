@@ -23,10 +23,7 @@ def set_project(ctx, config):
     config_dict = settings_dict['configs'][config]
     if settings_dict.get('version') and version.parse(str(settings_dict['version'])) > version.parse('1'):
         provider_data = config_dict.get('cloud_provider')
-        if provider_data and provider_data['name'] == 'azure':
-            ctx.run('az account set -s {subscription}'
-                .format(subscription=provider_data['subscription_id']), echo=True)
-        elif provider_data and provider_data['name'] == 'gcp':
+        if provider_data and provider_data['name'] == 'gcp':
             ctx.run('gcloud config set project {project}'
                 .format(project=provider_data['project']), echo=True)
     else:
@@ -41,37 +38,27 @@ def set_cluster(ctx, config):
 
     if settings_dict.get('version') and version.parse(str(settings_dict['version'])) > version.parse('1'):
         provider_data = config_dict.get('cloud_provider')
-        if provider_data['name'] == 'azure':
-            ctx.run('az aks get-credentials -g {group} -n {cluster} --context aks-{region}-{cluster} --context {name}_{cluster}_{region}  --overwrite-existing'
-                    .format(group=provider_data['resource_group'],
-                            cluster=provider_data['kube_cluster'],
-                            region=provider_data['region'],
-                            name=provider_data['name']
-                            ), echo=True)
-        elif provider_data['name'] == 'gcp':
-            if provider_data.get('zone'):
-                zone_or_region_param = '--zone {}'.format(provider_data['zone'])
-                zone = provider_data['zone']
-            elif provider_data.get('region'):
-                zone_or_region_param = '--region {}'.format(provider_data['region'])
-                zone = provider_data['region']
+        if provider_data.get('zone'):
+            zone_or_region_param = '--zone {}'.format(provider_data['zone'])
+            zone = provider_data['zone']
+        elif provider_data.get('region'):
+            zone_or_region_param = '--region {}'.format(provider_data['region'])
+            zone = provider_data['region']
 
-            ctx.run('gcloud container clusters get-credentials {cluster}'
-                    ' --project {project} {zone_or_region_param}'
-                    .format(cluster=provider_data['kube_cluster'],
-                            project=provider_data['project'],
-                            zone_or_region_param=zone_or_region_param),
-                    echo=True)
+        ctx.run('gcloud container clusters get-credentials {cluster}'
+                ' --project {project} {zone_or_region_param}'
+                .format(cluster=provider_data['kube_cluster'],
+                        project=provider_data['project'],
+                        zone_or_region_param=zone_or_region_param),
+                echo=True)
 
-            ctx.run('kubectl config rename-context gke_{project}_{zone}_{cluster}'
-                    ' {name}_{project}_{cluster}_{zone}'
-                    .format(cluster=provider_data['kube_cluster'],
-                            project=provider_data['project'],
-                            name=provider_data['name'],
-                            zone=zone),
-                    echo=True)
-        else:
-            sys.exit(f"Unsupported provider: {provider_data['name']}")
+        ctx.run('kubectl config rename-context gke_{project}_{zone}_{cluster}'
+                ' {name}_{project}_{cluster}_{zone}'
+                .format(cluster=provider_data['kube_cluster'],
+                        project=provider_data['project'],
+                        name=provider_data['name'],
+                        zone=zone),
+                echo=True)
     else:
         if config_dict.get('cloud_zone'):
             zone_or_region_param = '--zone {}'.format(config_dict['cloud_zone'])
@@ -133,39 +120,23 @@ def set_context(ctx, config):
 
     # v2 (or v3 when kube_context is not specified)
     elif version.parse(str(settings_dict['version'])) >= version.parse('2'):
-        if provider_data.get('name') == 'gcp':
-            if provider_data.get('zone') is not None:
-                get_zone = provider_data['zone']
-            elif provider_data.get('region') is not None:
-                get_zone = provider_data['region']
+        if provider_data.get('zone') is not None:
+            get_zone = provider_data['zone']
+        elif provider_data.get('region') is not None:
+            get_zone = provider_data['region']
 
-            ctx.run('kubectl config use-context {name}_{project}_{cluster}_{zone}'
-                ' --namespace={namespace}'
-                .format(namespace=config_dict['namespace'],
-                        project=provider_data['project'],
-                        cluster=provider_data['kube_cluster'],
-                        name=provider_data['name'],
-                        zone=get_zone),
-                echo=True)
-            ctx.run('kubectl config set-context --current'
-                ' --namespace={namespace}'
-                .format(namespace=config_dict['namespace']),
-                echo=True)
-
-        elif provider_data.get('name') == 'azure':
-            ctx.run('kubectl config use-context {name}_{cluster}_{region}'
-                ' --namespace={namespace}'
-                .format(namespace=config_dict['namespace'],
-                        cluster=provider_data['kube_cluster'],
-                        name=provider_data['name'],
-                        region=provider_data['region']),
-                echo=True)
-            ctx.run('kubectl config set-context --current'
-                ' --namespace={namespace}'
-                .format(namespace=config_dict['namespace']),
-                echo=True)
-        else:
-            sys.exit(f"Invalid provider name in rdeploy file: {provider_data.get('name')}")
+        ctx.run('kubectl config use-context {name}_{project}_{cluster}_{zone}'
+            ' --namespace={namespace}'
+            .format(namespace=config_dict['namespace'],
+                    project=provider_data['project'],
+                    cluster=provider_data['kube_cluster'],
+                    name=provider_data['name'],
+                    zone=get_zone),
+            echo=True)
+        ctx.run('kubectl config set-context --current'
+            ' --namespace={namespace}'
+            .format(namespace=config_dict['namespace']),
+            echo=True)
 
     # Config file v1 or no version
     else:
@@ -256,7 +227,7 @@ def latest_prerelease(ctx, ver):
 @task
 def create_namespace(ctx, config):
     """
-    Updates kubernetes deployment to use specified version
+    Creates a kubernetes namespace
     """
     settings_dict = get_settings()
     config_dict = settings_dict['configs'][config]
@@ -270,7 +241,7 @@ def create_namespace(ctx, config):
 @task
 def upload_secrets(ctx, config, env_file):
     """
-    Updates kubernetes deployment to use specified version
+    Uploads secrets from an env file to kubernetes
     """
     settings_dict = get_settings()
     config_dict = settings_dict['configs'][config]
@@ -303,6 +274,7 @@ def create_volume(ctx, name,
                   zone='europe-west1-c',
                   size='100',
                   type='pd-standard'):
+    """Creates a GCE persistent disk"""
     ctx.run('gcloud compute disks create {name}'
             ' --zone {zone} --size {size} --type {type}'
             .format(name=name, size=size, zone=zone, type=type))
@@ -320,7 +292,7 @@ def upload_static(ctx, config, bucket_name):
 
 @task
 def create_bucket(ctx, config, bucket_name):
-    """Creates gcloud bucket for static files"""
+    """Creates a private gcloud bucket"""
     set_project(ctx, config)
 
     ctx.run('gsutil mb gs://{bucket_name}'
@@ -329,10 +301,9 @@ def create_bucket(ctx, config, bucket_name):
             .format(bucket_name=bucket_name), echo=False)
 
 
-
 @task
 def create_public_bucket(ctx, config, bucket_name):
-    """Creates gcloud bucket for static files"""
+    """Creates a public gcloud bucket"""
     set_project(ctx, config)
 
     ctx.run('gsutil mb -b on gs://{bucket_name}'.format(bucket_name=bucket_name))
@@ -358,7 +329,7 @@ def install(ctx, config):
 
     provider_data = config_dict.get('cloud_provider')
     helm_registry = provider_data.get('helm_registry')
-    if provider_data.get('name') == 'gcp' and helm_registry:
+    if helm_registry:
         # Authenticate with the GCP Artifact Registry
         ctx.run('gcloud auth print-access-token | {helm_bin} registry login -u oauth2accesstoken --password-stdin https://{helm_registry}'.format(helm_registry=helm_registry, helm_bin=helm_bin), echo=True)
         helm_chart = 'oci://{helm_registry}/{gcp_project}/{helm_chart}'.format(helm_registry=helm_registry, gcp_project=provider_data['project'], helm_chart=config_dict['helm_chart'])
@@ -393,7 +364,7 @@ def upgrade(ctx, config, tag):
 
     provider_data = config_dict.get('cloud_provider')
     helm_registry = provider_data.get('helm_registry')
-    if provider_data.get('name') == 'gcp' and helm_registry:
+    if helm_registry:
         # Authenticate with the GCP Artifact Registry
         ctx.run('gcloud auth print-access-token | {helm_bin} registry login -u oauth2accesstoken --password-stdin https://{helm_registry}'.format(helm_registry=helm_registry, helm_bin=helm_bin), echo=True)
         helm_chart = 'oci://{helm_registry}/{gcp_project}/{helm_chart}'.format(helm_registry=helm_registry, gcp_project=provider_data['project'], helm_chart=config_dict['helm_chart'])
@@ -415,6 +386,7 @@ def upgrade(ctx, config, tag):
 
 @task
 def helm(ctx, config, command):
+    """Run arbitrary helm commands"""
     settings_dict = get_settings()
     config_dict = settings_dict['configs'][config]
     set_context(ctx, config)
@@ -428,6 +400,7 @@ def helm(ctx, config, command):
 
 @task
 def helm_setup(ctx, config):
+    """Download and configure a local Helm binary"""
     settings_dict = get_settings()
     config_dict = settings_dict['configs'][config]
 
@@ -461,7 +434,7 @@ def helm_setup(ctx, config):
 
     provider = config_dict.get('cloud_provider')
     helm_registry = provider.get('helm_registry')
-    if not (provider.get('name') == 'gcp' and helm_registry):
+    if not helm_registry:
         ctx.run('{helm_bin} repo add stable https://charts.helm.sh/stable'.format(helm_bin=helm_bin), echo=True)
         ctx.run('{helm_bin} repo add rehive https://rehive.github.io/charts'.format(helm_bin=helm_bin), echo=True)
 
@@ -497,7 +470,7 @@ def shell(ctx, config, tag=None):
 
 @task
 def manage(ctx, config, cmd, tag=None):
-    """Exec into the management container"""
+    """Run a Django management command in-cluster"""
     set_context(ctx, config)
     settings_dict = get_settings()
     config_dict = settings_dict['configs'][config]
@@ -557,7 +530,7 @@ def build(ctx, config, tag):
 @task
 def cloudbuild(ctx, config, tag):
     """
-    Build project's docker image using google cloud builder and pushes to remote repo
+    Build project's docker image using Google Cloud Build
     """
     settings_dict = get_settings()
     config_dict = settings_dict['configs'][config]
@@ -570,43 +543,21 @@ def cloudbuild(ctx, config, tag):
     else:
         set_project(ctx, config)
 
-
     if settings_dict.get('version') and version.parse(str(settings_dict['version'])) > version.parse('1'):
         provider_data = config_dict.get('cloud_provider')
+        project = provider_data['project']
 
-        def azure_image_build(container_registry, image_name, tag):
-            ctx.run('az acr run'
-                ' -r {container_registry}'
-                ' -f ./etc/docker/acr.yaml'
-                ' --set IMAGE={image_name}'
-                ' --set TAG_NAME={tag_name}'
-                ' .'
-                .format(container_registry=container_registry,
-                        image_name=image_name,
-                        tag_name=tag), echo=True)
-
-        def google_image_build(project, image_name, tag):
-            log_dir = "gs://{project}-cloudbuild-logs/{image}/{tag_name}/".format(
-            project=project, image=image_name, tag_name=tag)
-            ctx.run('gcloud builds submit .'
-                ' --config etc/docker/cloudbuild.yaml'
-                ' --substitutions _IMAGE={image_name},TAG_NAME={tag_name}'
-                ' --gcs-log-dir {log_dir}'
-                .format(image_name=image_name, tag_name=tag, log_dir=log_dir),
-                echo=True)
-
-        if config_dict.get('container_registry_provider') == 'azure':
-            azure_image_build(provider_data['container_registry'], image_name, tag)
-
-        elif config_dict.get('container_registry_provider') == 'google':
+        if config_dict.get('container_registry_provider') == 'google':
             project = config_dict['docker_image'].split('/')[1]
-            google_image_build(project, image_name, tag)
 
-        else:
-            if provider_data and provider_data['name'] == 'azure':
-                azure_image_build(provider_data['container_registry'], image_name, tag)
-            else:
-                google_image_build(provider_data['project'], image_name, tag)
+        log_dir = "gs://{project}-cloudbuild-logs/{image}/{tag_name}/".format(
+            project=project, image=image_name, tag_name=tag)
+        ctx.run('gcloud builds submit .'
+            ' --config etc/docker/cloudbuild.yaml'
+            ' --substitutions _IMAGE={image_name},TAG_NAME={tag_name}'
+            ' --gcs-log-dir {log_dir}'
+            .format(image_name=image_name, tag_name=tag, log_dir=log_dir),
+            echo=True)
 
     else:
         log_dir = "gs://{project}-cloudbuild-logs/{image}/{tag_name}/".format(
