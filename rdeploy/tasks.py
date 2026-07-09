@@ -23,9 +23,13 @@ def set_project(ctx, config):
     config_dict = settings_dict['configs'][config]
     if settings_dict.get('version') and version.parse(str(settings_dict['version'])) > version.parse('1'):
         provider_data = config_dict.get('cloud_provider')
-        if provider_data and provider_data['name'] == 'gcp':
-            ctx.run('gcloud config set project {project}'
-                .format(project=provider_data['project']), echo=True)
+        if not provider_data or provider_data.get('name') != 'gcp':
+            sys.exit("Unsupported cloud provider: {}."
+                     " Only 'gcp' is supported since rdeploy 0.2.0"
+                     " (Azure support was removed)."
+                     .format(provider_data.get('name') if provider_data else None))
+        ctx.run('gcloud config set project {project}'
+            .format(project=provider_data['project']), echo=True)
     else:
         ctx.run('gcloud config set project {project}'
                 .format(project=config_dict['cloud_project']), echo=True)
@@ -38,12 +42,20 @@ def set_cluster(ctx, config):
 
     if settings_dict.get('version') and version.parse(str(settings_dict['version'])) > version.parse('1'):
         provider_data = config_dict.get('cloud_provider')
+        if not provider_data or provider_data.get('name') != 'gcp':
+            sys.exit("Unsupported cloud provider: {}."
+                     " Only 'gcp' is supported since rdeploy 0.2.0"
+                     " (Azure support was removed)."
+                     .format(provider_data.get('name') if provider_data else None))
+
         if provider_data.get('zone'):
             zone_or_region_param = '--zone {}'.format(provider_data['zone'])
             zone = provider_data['zone']
         elif provider_data.get('region'):
             zone_or_region_param = '--region {}'.format(provider_data['region'])
             zone = provider_data['region']
+        else:
+            sys.exit("cloud_provider requires either 'zone' or 'region' in rdeploy.yaml.")
 
         ctx.run('gcloud container clusters get-credentials {cluster}'
                 ' --project {project} {zone_or_region_param}'
@@ -120,10 +132,18 @@ def set_context(ctx, config):
 
     # v2 (or v3 when kube_context is not specified)
     elif version.parse(str(settings_dict['version'])) >= version.parse('2'):
+        if not provider_data or provider_data.get('name') != 'gcp':
+            sys.exit("Unsupported cloud provider: {}."
+                     " Only 'gcp' is supported since rdeploy 0.2.0"
+                     " (Azure support was removed)."
+                     .format(provider_data.get('name') if provider_data else None))
+
         if provider_data.get('zone') is not None:
             get_zone = provider_data['zone']
         elif provider_data.get('region') is not None:
             get_zone = provider_data['region']
+        else:
+            sys.exit("cloud_provider requires either 'zone' or 'region' in rdeploy.yaml.")
 
         ctx.run('kubectl config use-context {name}_{project}_{cluster}_{zone}'
             ' --namespace={namespace}'
@@ -167,7 +187,7 @@ def next_version(ctx, bump):
     ver = semver.Version.parse(latest_tag)
 
     increment = {
-        'build': lambda v: v.bump_build,
+        'build': lambda v: str(v.bump_build()),
         'patch': lambda v: str(v.bump_patch()),
         'minor': lambda v: str(v.bump_minor()),
         'major': lambda v: str(v.bump_major()),
@@ -180,7 +200,7 @@ def next_version(ctx, bump):
             # Check for existing pre-releases and increment
             pre_ver = semver.Version.parse(latest_prerelease(ctx, incremented))
             incremented = str(pre_ver.bump_prerelease())
-        except (ReleaseError, Exception):
+        except (ReleaseError, ValueError):
             # No existing pre-release, so create one
             incremented = str(semver.Version.parse(incremented).bump_prerelease())
     else:
@@ -545,10 +565,16 @@ def cloudbuild(ctx, config, tag):
 
     if settings_dict.get('version') and version.parse(str(settings_dict['version'])) > version.parse('1'):
         provider_data = config_dict.get('cloud_provider')
-        project = provider_data['project']
 
         if config_dict.get('container_registry_provider') == 'google':
             project = config_dict['docker_image'].split('/')[1]
+        elif provider_data and provider_data.get('name') == 'gcp':
+            project = provider_data['project']
+        else:
+            sys.exit("Unsupported cloud provider: {}."
+                     " Only 'gcp' is supported since rdeploy 0.2.0"
+                     " (Azure support was removed)."
+                     .format(provider_data.get('name') if provider_data else None))
 
         log_dir = "gs://{project}-cloudbuild-logs/{image}/{tag_name}/".format(
             project=project, image=image_name, tag_name=tag)

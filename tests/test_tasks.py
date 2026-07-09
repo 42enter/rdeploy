@@ -127,6 +127,12 @@ class TestNextVersion:
             result = next_version(mock_ctx, bump='major')
         assert result == '2.0.0'
 
+    def test_build_bump(self, mock_ctx):
+        mock_ctx.run.return_value = MagicMock(stdout="v1.2.3\n")
+        with patch('rdeploy.tasks.get_settings', return_value={}):
+            result = next_version(mock_ctx, bump='build')
+        assert result == '1.2.3+build.1'
+
     def test_patch_bump_from_zero(self, mock_ctx):
         # No tags exist - should start from 0.0.0
         mock_ctx.run.return_value = MagicMock(stdout="\n")
@@ -143,7 +149,17 @@ class TestNextVersion:
             MagicMock(stdout="\n"),  # git tag for latest_prerelease (no match)
         ]
         result = next_version(mock_ctx, bump='pre-patch')
-        assert 'rc' in result or 'dev' in result or '1.2.4' in result
+        assert result == '1.2.4-rc.1'
+
+    def test_pre_patch_bump_with_existing_prerelease(self, mock_ctx):
+        mock_ctx.run.side_effect = [
+            MagicMock(),  # git fetch for latest_version
+            MagicMock(stdout="v1.2.3\n"),  # git tag for latest_version
+            MagicMock(),  # git fetch for latest_prerelease
+            MagicMock(stdout="v1.2.4-rc.1\n"),  # existing pre-release
+        ]
+        result = next_version(mock_ctx, bump='pre-patch')
+        assert result == '1.2.4-rc.2'
 
 
 class TestLatestVersion:
@@ -226,6 +242,29 @@ class TestSetContext:
         assert mock_ctx.run.call_count == 2
         first_call = mock_ctx.run.call_args_list[0][0][0]
         assert 'gcp_my-gcp-project_cluster-1_europe-west1-c' in first_call
+
+    def test_v2_non_gcp_provider_exits(self, mock_ctx, sample_settings_v2):
+        settings = yaml.safe_load(open(sample_settings_v2))
+        settings['configs']['staging']['cloud_provider']['name'] = 'azure'
+        with patch('rdeploy.tasks.get_settings', return_value=settings):
+            with pytest.raises(SystemExit, match="Unsupported cloud provider: azure"):
+                set_context(mock_ctx, 'staging')
+
+
+class TestSetCluster:
+    def test_v2_non_gcp_provider_exits(self, mock_ctx, sample_settings_v2):
+        settings = yaml.safe_load(open(sample_settings_v2))
+        settings['configs']['staging']['cloud_provider']['name'] = 'azure'
+        with patch('rdeploy.tasks.get_settings', return_value=settings):
+            with pytest.raises(SystemExit, match="Unsupported cloud provider: azure"):
+                set_cluster(mock_ctx, 'staging')
+
+    def test_v2_missing_zone_and_region_exits(self, mock_ctx, sample_settings_v2):
+        settings = yaml.safe_load(open(sample_settings_v2))
+        del settings['configs']['staging']['cloud_provider']['region']
+        with patch('rdeploy.tasks.get_settings', return_value=settings):
+            with pytest.raises(SystemExit, match="'zone' or 'region'"):
+                set_cluster(mock_ctx, 'staging')
 
 
 class TestCreateNamespace:
